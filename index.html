@@ -244,6 +244,23 @@
                 <!-- LEFT: AI GENERATION & REFINEMENT -->
                 <div class="space-y-4">
                     <h3 class="panel-header">AI & GROOVE ASSISTANT</h3>
+                    
+                    <!-- NEW GROOVE REFINEMENT DROPDOWN (MOVED TO TOP) -->
+                    <div class="space-y-2">
+                        <select id="groove-style-select" class="w-full p-2 rounded bg-gray-600 text-white border border-gray-700 focus:border-accent outline-none">
+                            <option value="J Dilla">J Dilla (Drunk Groove)</option>
+                            <option value="DJ Premier">DJ Premier (Classic Boom-Bap)</option>
+                            <option value="The Alchemist">The Alchemist (Gritty & Raw)</option>
+                            <option value="Madlib">Madlib (Obscure Lo-Fi)</option>
+                            <option value="RZA">RZA (Thick & Compressed)</option>
+                        </select>
+                        <button onclick="refineGroove()" class="btn-primary w-full bg-purple-600 hover:bg-purple-500">
+                            <i data-lucide="compass" class="w-4 h-4 inline-block align-middle"></i>
+                            APPLY GROOVE STYLE
+                        </button>
+                    </div>
+                    <!-- END NEW GROOVE REFINEMENT DROPDOWN -->
+
                     <div class="bg-[#40404a] p-4 rounded-lg space-y-3">
                         <p class="text-xs text-gray-400">
                             *Target one track (e.g., 'Kick' track 1) before generating.
@@ -261,22 +278,6 @@
                         <p class="text-sm font-bold text-gray-500">Generated Parameters:</p>
                         <pre id="parameter-output" class="text-xs mt-1 text-gray-400 whitespace-pre-wrap"></pre>
                     </div>
-
-                    <!-- NEW GROOVE REFINEMENT DROPDOWN -->
-                    <div class="space-y-2">
-                        <select id="groove-style-select" class="w-full p-2 rounded bg-gray-600 text-white border border-gray-700 focus:border-accent outline-none">
-                            <option value="J Dilla">J Dilla (Drunk Groove)</option>
-                            <option value="DJ Premier">DJ Premier (Classic Boom-Bap)</option>
-                            <option value="The Alchemist">The Alchemist (Gritty & Raw)</option>
-                            <option value="Madlib">Madlib (Obscure Lo-Fi)</option>
-                            <option value="RZA">RZA (Thick & Compressed)</option>
-                        </select>
-                        <button onclick="refineGroove()" class="btn-primary w-full bg-purple-600 hover:bg-purple-500">
-                            <i data-lucide="compass" class="w-4 h-4 inline-block align-middle"></i>
-                            APPLY GROOVE STYLE
-                        </button>
-                    </div>
-                    <!-- END NEW GROOVE REFINEMENT DROPDOWN -->
 
                     <div id="groove-refine-output" class="text-xs text-gray-400 mt-2"></div>
                 </div>
@@ -317,11 +318,15 @@
                     <!-- EXPORT PANEL -->
                     <h3 class="panel-header pt-2">EXPORT & AFFILIATE</h3>
                     <div class="bg-[#40404a] p-4 rounded-lg space-y-3">
+                        
+                        <!-- Coupon Code and Price/Discount Display -->
                         <div class="flex space-x-3 items-center">
                             <input type="text" id="coupon-code" placeholder="DJ COUPON CODE" 
                                    oninput="applyCoupon()"
                                    class="flex-grow p-2 rounded bg-gray-600 text-white placeholder-gray-400 border border-gray-700 focus:border-accent outline-none uppercase">
-                            <span id="final-wav-price" class="text-xl font-bold text-accent">$5.00</span>
+                            
+                            <!-- Display 50% Discount Text -->
+                            <span class="text-md font-bold text-green-400">50% DISCOUNT</span> 
                         </div>
                         <p id="discount-message" class="text-sm text-gray-400 min-h-[1.5em]"></p>
 
@@ -832,23 +837,28 @@
                 const djName = mockCoupons[coupon].name;
 
                 finalPrice = newPrice;
-                finalPriceDisplay.textContent = `$${newPrice.toFixed(2)}`;
-                finalPriceDisplay.classList.add('text-green-400');
+                // NOTE: We no longer update the final-wav-price span here, as it was removed from the input line
                 
-                discountMessage.innerHTML = `<span class="text-green-400">Coupon applied! You save $${discount.toFixed(2)}. DJ ${djName} earns a $${discount.toFixed(2)} commission!</span>`;
+                discountMessage.innerHTML = `<span class="text-green-400">Coupon applied! Price discounted to $${newPrice.toFixed(2)}. DJ ${djName} earns a $${discount.toFixed(2)} commission!</span>`;
             } else if (coupon.length > 0) {
-                finalPriceDisplay.textContent = `$${RETAIL_PRICE.toFixed(2)}`;
-                finalPriceDisplay.classList.remove('text-green-400');
-                discountMessage.textContent = 'Invalid coupon code. Price is retail.';
+                // When invalid, show the retail price in the message
+                discountMessage.innerHTML = `Invalid coupon code. Retail Price: <span class="text-accent">$${RETAIL_PRICE.toFixed(2)}</span>`;
             } else {
-                finalPriceDisplay.textContent = `$${RETAIL_PRICE.toFixed(2)}`;
-                finalPriceDisplay.classList.remove('text-green-400');
-                discountMessage.textContent = '';
+                // When empty, show the retail price in the message
+                discountMessage.innerHTML = `Enter a DJ code for a 50% discount on the $${RETAIL_PRICE.toFixed(2)} retail price.`;
             }
             
-            // Update button text
+            // Update button text using the calculated price
             document.getElementById('wav-export-button').textContent = `DOWNLOAD WAV ($${finalPrice.toFixed(2)})`;
         }
+        
+        // Initial call to set the default message
+        document.addEventListener('DOMContentLoaded', () => {
+            // ... (other initialization code)
+            const RETAIL_PRICE = 5.00; // Define RETAIL_PRICE locally for DOMContentLoaded scope
+            document.getElementById('discount-message').innerHTML = `Enter a DJ code for a 50% discount on the $${RETAIL_PRICE.toFixed(2)} retail price.`;
+        });
+
 
         function exportTrack(format) {
             if (format === 'mp3') {
