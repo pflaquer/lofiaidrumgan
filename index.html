@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lo Fi Drum Generator - Cyber Analog Fusion</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase Libraries -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- Global Variables (Provided by Canvas Environment) ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, auth, db;
+        
+        // Initialize Firebase only if config is available
+        if (Object.keys(firebaseConfig).length > 0) {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('error'); // Set error level to reduce console spam
+                
+                window.db = db; // Expose for global use
+
+                // Sign in logic
+                const signInUser = async () => {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    console.log("Firebase initialized and user signed in.");
+                };
+                signInUser();
+
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+            }
+        }
+    </script>
+    <!-- Load Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <style>
+        /* Michroma Font Import */
+        @import url('https://fonts.googleapis.com/css2?family=Michroma&display=swap');
+
+        /* Color Variables for Cyber Analog Theme */
+        :root {
+            --color-primary: #121216; /* Deep Dark */
+            --color-secondary: #2C2C34; /* Panel Background */
+            --color-accent: #FF7F00; /* Vibrant Orange */
+            --color-text-light: #E0E0E5; /* Light Text */
+            --color-text-dim: #A0A0A5; /* Dim Text */
+        }
+
+        body {
+            font-family: 'Michroma', sans-serif;
+            background-color: var(--color-primary);
+            color: var(--color-text-light);
+            transition: all 0.2s ease-in-out;
+            min-height: 100vh;
+        }
+
+        .container-bg {
+            background-color: var(--color-secondary);
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+        }
+
+        .panel-header {
+            color: var(--color-accent);
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }
+
+        .btn-primary {
+            background-color: var(--color-accent);
+            color: var(--color-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: background-color 0.15s, transform 0.1s;
+        }
+
+        .btn-primary:hover {
+            background-color: #FFA54F; /* Lighter orange */
+            transform: translateY(-1px);
+        }
+
+        .step-button {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 4px;
+            background-color: #40404a; /* Off state */
+            transition: background-color 0.1s, box-shadow 0.1s;
+        }
+
+        .step-button.active {
+            background-color: var(--color-accent);
+            box-shadow: 0 0 5px var(--color-accent);
+        }
+        
+        .step-button.playing {
+            /* Highlight currently playing step */
+            border: 2px solid var(--color-text-light);
+            box-shadow: 0 0 10px var(--color-text-light);
+        }
+
+        /* Custom Range Slider Styling (Webkit/Firefox) */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #40404a;
+            border-radius: 4px;
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--color-accent);
+            cursor: pointer;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--color-accent);
+            cursor: pointer;
+            border: none;
+        }
+
+        /* Tape Emulation Panel Glow */
+        #tape-emulation-panel.enabled {
+            border: 2px solid var(--color-accent);
+            box-shadow: 0 0 15px rgba(255, 127, 0, 0.6);
+        }
+
+        /* Utility classes for responsive grid */
+        .seq-grid {
+            display: grid;
+            grid-template-columns: 80px repeat(16, 1fr) 100px; /* Label + 16 steps + Action */
+            gap: 4px;
+            align-items: center;
+        }
+
+        @media (max-width: 640px) {
+            .seq-grid {
+                grid-template-columns: 60px repeat(16, 1fr);
+                gap: 2px;
+            }
+            .track-actions {
+                display: none; /* Hide action buttons on small screens */
+            }
+        }
+
+    </style>
+</head>
+<body class="p-4 sm:p-8 flex flex-col items-center">
+    
+    <div class="max-w-4xl w-full">
+        <!-- HEADER & ICON -->
+        <header class="text-center mb-6">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white mb-2">
+                LO FI DRUM GENERATOR
+            </h1>
+            <div class="flex justify-center mb-4">
+                <!-- Simple SVG Drum Machine/MPC Icon -->
+                <svg width="48" height="48" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="5" y="10" width="90" height="80" rx="10" fill="#2C2C34" stroke="var(--color-accent)" stroke-width="3"/>
+                    <rect x="15" y="20" width="70" height="20" rx="4" fill="#121216"/>
+                    <!-- 16 Pads (4x4) -->
+                    <g fill="var(--color-accent)">
+                        <rect x="15" y="55" width="15" height="15" rx="3"/>
+                        <rect x="32.5" y="55" width="15" height="15" rx="3"/>
+                        <rect x="50" y="55" width="15" height="15" rx="3"/>
+                        <rect x="67.5" y="55" width="15" height="15" rx="3"/>
+
+                        <rect x="15" y="72.5" width="15" height="15" rx="3"/>
+                        <rect x="32.5" y="72.5" width="15" height="15" rx="3"/>
+                        <rect x="50" y="72.5" width="15" height="15" rx="3"/>
+                        <rect x="67.5" y="72.5" width="15" height="15" rx="3"/>
+                    </g>
+                    <text x="50" y="48" font-family="Michroma" font-size="8" fill="var(--color-accent)" text-anchor="middle">A.I. SEQUENCER</text>
+                </svg>
+            </div>
+            <p class="text-sm text-gray-500">
+                Generate infinite, analog-filtered drum loops using AI.
+            </p>
+        </header>
+
+        <!-- MAIN APP CONTAINER -->
+        <div class="container-bg p-4 sm:p-6 mb-8">
+            
+            <!-- TRANSPORT & GLOBAL CONTROLS -->
+            <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+                
+                <!-- PLAY/STOP/SHUFFLE -->
+                <div class="flex space-x-3">
+                    <button id="play-button" onclick="togglePlayback()" class="btn-primary flex items-center">
+                        <span id="play-icon">▶</span>
+                        <span class="ml-1">PLAY</span>
+                    </button>
+                    <button id="shuffle-groove-button" onclick="shuffleGroove()" class="btn-primary bg-gray-600 hover:bg-gray-500 flex items-center">
+                        <i data-lucide="shuffle" class="w-4 h-4"></i>
+                        <span class="ml-1 hidden sm:inline">SHUFFLE GROOVE</span>
+                    </button>
+                </div>
+
+                <!-- BPM & SWING SLIDERS -->
+                <div class="flex-grow max-w-sm ml-4 space-y-2">
+                    <div class="flex items-center">
+                        <label for="bpm-slider" class="text-sm w-12 text-right mr-2 text-white">BPM:</label>
+                        <input type="range" id="bpm-slider" min="60" max="180" value="120" step="1" oninput="updateBPM(this.value)" class="flex-grow">
+                        <span id="bpm-value" class="text-md font-bold ml-2 w-8 text-right text-white">120</span>
+                    </div>
+                    <div class="flex items-center">
+                        <label for="swing-knob" class="text-sm w-12 text-right mr-2 text-white">SWING:</label>
+                        <input type="range" id="swing-knob" min="0" max="75" value="0" step="5" oninput="updateSwing(this.value)" class="flex-grow">
+                        <span id="swing-value" class="text-md font-bold ml-2 w-8 text-right text-white">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SEQUENCER GRID AREA -->
+            <div id="sequencer-container" class="space-y-2 mb-6">
+                <!-- Tracks will be rendered here by JavaScript -->
+            </div>
+
+            <!-- AI CONTROLS & PRESETS -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-700 pt-6">
+                
+                <!-- LEFT: AI GENERATION & REFINEMENT -->
+                <div class="space-y-4">
+                    <h3 class="panel-header">AI & GROOVE ASSISTANT</h3>
+                    <div class="bg-[#40404a] p-4 rounded-lg space-y-3">
+                        <p class="text-xs text-gray-400">
+                            *Target one track (e.g., 'Kick' track 1) before generating.
+                        </p>
+                        <input type="text" id="ai-prompt" placeholder="e.g., Warm, deep 808 kick with high decay"
+                               class="w-full p-2 rounded bg-gray-600 text-white placeholder-gray-400 border border-gray-700 focus:border-accent outline-none">
+                        <button onclick="generateSampleParameters()" class="btn-primary w-full bg-blue-600 hover:bg-blue-500">
+                            <i data-lucide="cpu" class="w-4 h-4 inline-block align-middle"></i>
+                            GENERATE SAMPLE PARAMETERS
+                        </button>
+                    </div>
+
+                    <div id="ai-output" class="bg-[#40404a] p-3 rounded-lg text-xs text-gray-300">
+                        <!-- AI Generated Parameters will appear here -->
+                        <p class="text-sm font-bold text-gray-500">Generated Parameters:</p>
+                        <pre id="parameter-output" class="text-xs mt-1 text-gray-400 whitespace-pre-wrap"></pre>
+                    </div>
+
+                    <!-- NEW GROOVE REFINEMENT DROPDOWN -->
+                    <div class="space-y-2">
+                        <select id="groove-style-select" class="w-full p-2 rounded bg-gray-600 text-white border border-gray-700 focus:border-accent outline-none">
+                            <option value="J Dilla">J Dilla (Drunk Groove)</option>
+                            <option value="DJ Premier">DJ Premier (Classic Boom-Bap)</option>
+                            <option value="The Alchemist">The Alchemist (Gritty & Raw)</option>
+                            <option value="Madlib">Madlib (Obscure Lo-Fi)</option>
+                            <option value="RZA">RZA (Thick & Compressed)</option>
+                        </select>
+                        <button onclick="refineGroove()" class="btn-primary w-full bg-purple-600 hover:bg-purple-500">
+                            <i data-lucide="compass" class="w-4 h-4 inline-block align-middle"></i>
+                            APPLY GROOVE STYLE
+                        </button>
+                    </div>
+                    <!-- END NEW GROOVE REFINEMENT DROPDOWN -->
+
+                    <div id="groove-refine-output" class="text-xs text-gray-400 mt-2"></div>
+                </div>
+
+                <!-- RIGHT: ANALOG FILTER & EXPORT -->
+                <div class="space-y-4">
+                    <h3 class="panel-header">SECRET SAUCE: ANALOG FILTER</h3>
+                    <div id="tape-emulation-panel" class="bg-[#40404a] p-4 rounded-lg space-y-3 border-2 border-gray-700 transition-all">
+                        
+                        <div class="flex justify-between items-center">
+                            <label for="tape-emulation-toggle" class="text-sm text-white">TAPE EMULATION (VCF/WOW)</label>
+                            <input type="checkbox" id="tape-emulation-toggle" onchange="toggleTapeEmulation(this.checked)" class="w-5 h-5 appearance-none rounded-full bg-gray-600 checked:bg-accent border-gray-700 cursor-pointer transition-colors">
+                        </div>
+
+                        <div id="analog-controls" class="space-y-2 text-sm">
+                            <div class="flex items-center justify-between">
+                                <label>WARMTH / SATURATION</label>
+                                <select id="analog-preset" onchange="applyAnalogPreset(this.value)" class="bg-gray-600 p-1 rounded text-white border border-gray-700">
+                                    <option value="OFF">OFF / CLEAN</option>
+                                    <option value="Trip-Hop Portishead">1. Trip-Hop Portishead</option>
+                                    <option value="MPC-60 '93 Crunch">2. MPC-60 '93 Crunch</option>
+                                    <option value="East Coast Boom">3. East Coast Boom</option>
+                                    <option value="Jungle '95 Break">4. Jungle '95 Break</option>
+                                    <option value="E-Mu SP-1200 Snap">5. E-Mu SP-1200 Snap</option>
+                                    <option value="Detroit Raw Kick">6. Detroit Raw Kick</option>
+                                    <option value="VHS IDM Glitch">7. VHS IDM Glitch</option>
+                                    <option value="Deep House Daze">8. Deep House Daze</option>
+                                    <option value="Jungle Brothers Cassette">9. JB Cassette</option>
+                                    <option value="Rave Acid Decay">10. Rave Acid Decay</option>
+                                </select>
+                            </div>
+                            <div class="text-xs text-gray-500" id="preset-details">
+                                Select a preset to model legendary analog hardware behavior.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EXPORT PANEL -->
+                    <h3 class="panel-header pt-2">EXPORT & AFFILIATE</h3>
+                    <div class="bg-[#40404a] p-4 rounded-lg space-y-3">
+                        <div class="flex space-x-3 items-center">
+                            <input type="text" id="coupon-code" placeholder="DJ COUPON CODE" 
+                                   oninput="applyCoupon()"
+                                   class="flex-grow p-2 rounded bg-gray-600 text-white placeholder-gray-400 border border-gray-700 focus:border-accent outline-none uppercase">
+                            <span id="final-wav-price" class="text-xl font-bold text-accent">$5.00</span>
+                        </div>
+                        <p id="discount-message" class="text-sm text-gray-400 min-h-[1.5em]"></p>
+
+                        <button onclick="exportTrack('mp3')" class="btn-primary w-full bg-green-600 hover:bg-green-500">
+                            DOWNLOAD MP3 (FREE / Lo-Fi Quality)
+                        </button>
+                        <button id="wav-export-button" onclick="exportTrack('wav')" class="btn-primary w-full bg-accent hover:bg-[#FFA54F]">
+                            DOWNLOAD WAV ($5.00)
+                        </button>
+                        <button onclick="generateMarketingCopy()" class="btn-primary w-full bg-gray-600 hover:bg-gray-500 text-xs mt-2">
+                             GENERATE MARKETING COPY (GEMINI)
+                        </button>
+                        <div id="marketing-copy-output" class="text-xs text-gray-400 mt-2"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- TEMPLATES (Must be outside the main logic flow for reliability) -->
+    <template id="track-template">
+        <div class="seq-grid track-row mb-1">
+            <!-- Track Label -->
+            <div class="track-label text-sm text-right pr-2 text-gray-300"></div>
+            <!-- Step Buttons -->
+            <div class="step-container contents"></div>
+            <!-- Action Button -->
+            <div class="track-actions flex justify-end space-x-1">
+                <button class="btn-primary btn-ai text-xs p-1 bg-gray-600 hover:bg-blue-600" title="AI Generate Sample">
+                    <i data-lucide="wand-2" class="w-3 h-3"></i>
+                </button>
+            </div>
+        </div>
+    </template>
+    
+    <template id="step-button-template">
+        <button class="step-button"></button>
+    </template>
+
+
+    <script>
+        // --- GLOBAL STATE ---
+        const TRACK_NAMES = ["Kick", "Snare", "Hat 1", "Hat 2", "Clap", "Perc 1", "Bass", "FX"];
+        const NUM_STEPS = 16;
+        let sequencerPattern = []; // 8 tracks x 16 steps
+        let isPlaying = false;
+        let currentStep = 0;
+        let timer = null;
+        let BPM = 120;
+        let SWING = 0; // 0 to 75
+        let isTapeEmulationEnabled = false;
+        let finalPrice = 5.00;
+        let selectedTrackIndex = 0; // The currently selected track for AI generation
+
+        const RETAIL_PRICE = 5.00;
+        
+        // Mock Affiliate Data for coupon logic
+        const mockCoupons = {
+            'DJJAZZY': { name: 'DJ Jazzy', commission: 50 },
+            'BEATSMITH': { name: 'Beat Smith', commission: 50 },
+            'LOFIKING': { name: 'LoFi King', commission: 50 },
+        };
+
+        // --- GEMINI API CONFIGURATION ---
+        const GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+        const API_KEY = ""; // Canvas environment provides this at runtime
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${API_KEY}`;
+        
+        // --- CORE UI INITIALIZATION ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Wait for Lucide icons to be rendered
+            lucide.createIcons();
+            renderSequencer();
+            updateBPM(BPM); // Set initial BPM display
+            updateSwing(SWING); // Set initial Swing display
+        });
+        
+        // Function to create an initial blank pattern
+        function initializePattern() {
+            sequencerPattern = [];
+            for (let i = 0; i < TRACK_NAMES.length; i++) {
+                sequencerPattern.push(Array(NUM_STEPS).fill(0));
+            }
+            // Add a basic beat (Kick on 1, 5, 9, 13; Snare on 5, 13)
+            sequencerPattern[0][0] = 1; sequencerPattern[0][4] = 1; sequencerPattern[0][8] = 1; sequencerPattern[0][12] = 1;
+            sequencerPattern[1][4] = 1; sequencerPattern[1][12] = 1;
+        }
+
+        // Renders the 8x16 sequencer grid
+        function renderSequencer() {
+            // Check if pattern is initialized, if not, do so now.
+            if (sequencerPattern.length === 0) {
+                initializePattern();
+            }
+
+            const container = document.getElementById('sequencer-container');
+            const trackTemplate = document.getElementById('track-template');
+            const stepButtonTemplate = document.getElementById('step-button-template');
+
+            if (!trackTemplate || !stepButtonTemplate) {
+                console.error("Template elements not found. Check if they are defined correctly.");
+                return;
+            }
+
+            container.innerHTML = ''; 
+
+            sequencerPattern.forEach((track, trackIndex) => {
+                const trackClone = trackTemplate.content.cloneNode(true);
+                const trackRow = trackClone.querySelector('.track-row');
+                
+                trackRow.querySelector('.track-label').textContent = TRACK_NAMES[trackIndex];
+                
+                // Set click listener for AI button to target the track
+                const aiButton = trackRow.querySelector('.btn-ai');
+                aiButton.onclick = () => {
+                    selectedTrackIndex = trackIndex;
+                    document.getElementById('ai-prompt').placeholder = `Target: ${TRACK_NAMES[trackIndex]} - e.g., 'Warm, deep 808 kick with high decay'`;
+                    document.querySelector('.track-label.selected')?.classList.remove('selected', 'text-accent', 'font-bold');
+                    trackRow.querySelector('.track-label').classList.add('selected', 'text-accent', 'font-bold');
+                };
+
+
+                const stepContainer = trackRow.querySelector('.step-container');
+
+                track.forEach((state, stepIndex) => {
+                    const stepClone = stepButtonTemplate.content.cloneNode(true);
+                    const stepButton = stepClone.querySelector('.step-button');
+
+                    stepButton.setAttribute('data-track', trackIndex);
+                    stepButton.setAttribute('data-step', stepIndex);
+
+                    if (state === 1) {
+                        stepButton.classList.add('active');
+                    }
+                    
+                    // Add click handler to toggle step state
+                    stepButton.onclick = () => toggleStep(trackIndex, stepIndex);
+                    
+                    stepContainer.appendChild(stepButton);
+                });
+
+                container.appendChild(trackRow);
+            });
+            // Ensure icons are created after dynamic insertion
+            lucide.createIcons();
+        }
+
+        // Toggles the state of a single step button
+        function toggleStep(trackIndex, stepIndex) {
+            sequencerPattern[trackIndex][stepIndex] = 1 - sequencerPattern[trackIndex][stepIndex]; // Toggle 0 to 1 or 1 to 0
+            
+            // Update the UI
+            const button = document.querySelector(`.step-button[data-track="${trackIndex}"][data-step="${stepIndex}"]`);
+            if (button) {
+                button.classList.toggle('active', sequencerPattern[trackIndex][stepIndex] === 1);
+            }
+        }
+
+        // --- TRANSPORT & TIMING LOGIC ---
+
+        function updateBPM(value) {
+            BPM = parseInt(value);
+            document.getElementById('bpm-value').textContent = BPM;
+            if (isPlaying) {
+                togglePlayback(); // Restart to apply new tempo
+                togglePlayback();
+            }
+        }
+
+        function updateSwing(value) {
+            SWING = parseInt(value);
+            document.getElementById('swing-value').textContent = `${SWING}%`;
+            if (isPlaying) {
+                togglePlayback(); // Restart to apply new timing
+                togglePlayback();
+            }
+        }
+        
+        // This is the core 'secret sauce' timing function
+        function calculateIntervals(bpm, swing) {
+            const beatTimeMS = (60 / bpm) * 1000; // Time of one quarter note (e.g., 500ms @ 120 BPM)
+            const sixteenthNoteTime = beatTimeMS / 4; // Time of one 16th note (e.g., 125ms @ 120 BPM)
+
+            // Convert swing percentage (0-75) to a ratio where 50% is straight time (1:1) and 66.6% is perfect triplet swing (2:1 ratio)
+            const swingRatio = swing / 100; // 0.0 to 0.75
+
+            // The long interval (TL) and short interval (TS) must sum up to two 16th notes (a single 8th note duration)
+            // But here, we calculate the long and short 16th interval based on the total 8th note time (2 * 16th note time)
+            
+            // If swing is 0 (0% on slider), ratio is 0. But we want 50% ratio for straight time.
+            const straightRatio = 0.5;
+            const swingOffset = (swingRatio * straightRatio); // A scaling factor for offset
+            
+            // Adjust the actual ratio based on swing input (0.5 to 0.75)
+            const effectiveRatio = straightRatio + (swingRatio * (0.25 / 75) * 100);
+
+            const longIntervalRatio = effectiveRatio;
+            const shortIntervalRatio = 1 - longIntervalRatio;
+            
+            const totalEighthTime = sixteenthNoteTime * 2; // Time of two 16th notes
+
+            const longInterval = totalEighthTime * longIntervalRatio;
+            const shortInterval = totalEighthTime * shortIntervalRatio;
+
+            // When swing is 0%, longInterval = shortInterval = 125ms @ 120 BPM. (500ms / 4)
+            // When swing is 75%, it's heavily offset.
+
+            // The intervals must be calculated on a 16th note basis, but only applied to the second 16th of a pair.
+            const T_straight = sixteenthNoteTime; // 125ms @ 120 BPM
+
+            // We simplify the implementation by only modifying the duration of the SECOND 16th note of a pair (steps 1, 3, 5...)
+            const swingAmount = (swing / 75) * (T_straight * 0.5); // Max deviation is half a 16th note
+
+            const T_long = T_straight + swingAmount; // The first 16th of the pair is delayed
+            const T_short = T_straight - swingAmount; // The second 16th of the pair is accelerated
+
+            return { T_straight, T_long, T_short };
+        }
+
+        function runSequencer() {
+            if (!isPlaying) {
+                clearTimeout(timer);
+                return;
+            }
+
+            // 1. Highlight the current step in the UI
+            const allSteps = document.querySelectorAll('.step-button');
+            allSteps.forEach(btn => btn.classList.remove('playing'));
+            
+            const currentStepButtons = document.querySelectorAll(`.step-button[data-step="${currentStep}"]`);
+            currentStepButtons.forEach(btn => btn.classList.add('playing'));
+
+            // 2. Trigger samples for the current step
+            sequencerPattern.forEach((track, trackIndex) => {
+                if (track[currentStep] === 1) {
+                    playSample(trackIndex); // Placeholder for actual audio trigger
+                }
+            });
+
+            // 3. Determine the duration of the next step
+            const { T_straight, T_long, T_short } = calculateIntervals(BPM, SWING);
+            let nextStepTime;
+
+            // If the step is even (0, 2, 4, ...), it's the start of a new eighth note pair, use T_long (straight time is T_straight)
+            // If the step is odd (1, 3, 5, ...), it's the second 16th note, use T_short (the delay time)
+            if (SWING === 0) {
+                nextStepTime = T_straight; // Straight time
+            } else {
+                // Apply groove only to the second 16th note of a pair (odd steps)
+                nextStepTime = (currentStep % 2 === 0) ? T_long : T_short;
+            }
+            
+            // 4. Advance to the next step
+            currentStep = (currentStep + 1) % NUM_STEPS;
+
+            // 5. Schedule the next step
+            timer = setTimeout(runSequencer, nextStepTime);
+        }
+
+        // Placeholder for actual audio playback
+        function playSample(trackIndex) {
+            // In the final version, this will trigger the Web Audio API and Wasm filter
+            // console.log(`Playing ${TRACK_NAMES[trackIndex]} at step ${currentStep}`);
+        }
+
+        function togglePlayback() {
+            isPlaying = !isPlaying;
+            const playIcon = document.getElementById('play-icon');
+            
+            if (isPlaying) {
+                playIcon.textContent = '■'; // Show stop icon
+                playIcon.classList.add('text-red-500');
+                currentStep = 0; // Reset on play
+                runSequencer();
+            } else {
+                playIcon.textContent = '▶'; // Show play icon
+                playIcon.classList.remove('text-red-500');
+                clearTimeout(timer);
+                // Clear all playing highlights
+                document.querySelectorAll('.step-button').forEach(btn => btn.classList.remove('playing'));
+            }
+        }
+        
+        // --- UI & CUSTOM LOGIC ---
+
+        function shuffleGroove() {
+            sequencerPattern.forEach((track, trackIndex) => {
+                for (let i = 0; i < NUM_STEPS; i++) {
+                    // Randomly set step state (approx 35% chance of being active)
+                    sequencerPattern[trackIndex][i] = Math.random() < 0.35 ? 1 : 0;
+                }
+            });
+            renderSequencer(); // Rerender to show the new pattern
+            document.getElementById('groove-refine-output').innerHTML = '<span class="text-green-400">Groove shuffled to a new random pattern!</span>';
+        }
+
+        function toggleTapeEmulation(enabled) {
+            isTapeEmulationEnabled = enabled;
+            const panel = document.getElementById('tape-emulation-panel');
+            panel.classList.toggle('enabled', enabled);
+            document.getElementById('preset-details').textContent = enabled ? 
+                'Proprietary Analog Filter engaged: The sound will now be processed with non-linear saturation, VCF drive, and wow/flutter emulation.' : 
+                'Analog Filter is OFF. The sound will be clean.';
+        }
+
+        function applyAnalogPreset(presetName) {
+            const details = document.getElementById('preset-details');
+            if (presetName === 'OFF') {
+                details.innerHTML = 'Select a preset to model legendary analog hardware behavior.';
+                document.getElementById('tape-emulation-toggle').checked = false;
+                toggleTapeEmulation(false);
+                return;
+            }
+
+            // Mock implementation of applying a specific preset logic
+            let description = `Preset ${presetName} applied.`;
+            document.getElementById('tape-emulation-toggle').checked = true;
+            toggleTapeEmulation(true);
+
+            switch (presetName) {
+                case "Trip-Hop Portishead":
+                    description = "Smoky, Distant Breakbeats: High Reverb Decay, Low VCF Cutoff, Heavy Analog Compression.";
+                    break;
+                case "MPC-60 '93 Crunch":
+                    description = "Early Akai MPC Sound: High Bit-Crushing/Quantization, Medium Saturation, Tight Timing.";
+                    break;
+                case "East Coast Boom":
+                    description = "Classic NY Boom-Bap: High Vinyl Hiss/Dust, Focused VCF Punch, Low Swing.";
+                    break;
+                case "Jungle '95 Break":
+                    description = "Warped Amen/Apache Breakbeats: Extreme Pitch Drift, Aggressive Filtering, High Tempo.";
+                    break;
+                case "E-Mu SP-1200 Snap":
+                    description = "The Grittiest Drums: High VCF Drive, Fast Decay Envelope, High Noise Floor.";
+                    break;
+                case "Detroit Raw Kick":
+                    description = "Thick, Resonant 909 Kicks: Long VCO Decay, Aggressive Saturation on the low-end, Medium Swing.";
+                    break;
+                case "VHS IDM Glitch":
+                    description = "Warped Digital Artifacts: High Wow/Flutter Rate, Random Pitch Modulation, Subtle Glitch effects.";
+                    break;
+                case "Deep House Daze":
+                    description = "Muffled, Swinging Percussion: High Swing (40-50%), High Reverb Decay, Low VCF Cutoff.";
+                    break;
+                case "Jungle Brothers Cassette":
+                    description = "Early Rap/House Fusion: High Tape Saturation, Medium Hiss, Gated Reverb on the Snare.";
+                    break;
+                case "Rave Acid Decay":
+                    description = "303-Inspired Drums: Sharp, bright analog hats and snappy transient kicks, High-Frequency Exciter.";
+                    break;
+                case "Ross From Friends":
+                    description = "Hazy House: Gentle Saturation, Mid-range Swing, Long Release on Percussion for a smooth, lazy groove.";
+                    break;
+            }
+            details.textContent = description;
+        }
+
+        // --- GEMINI API CALLS ---
+
+        async function callGemini(systemPrompt, userQuery, isJson = false) {
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                // Use structured output for parameter generation
+                ...(isJson && {
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                waveform: { type: "STRING", description: "Base synthesis waveform (sine, triangle, square, noise)." },
+                                pitch_hz: { type: "NUMBER", description: "Base frequency in Hertz (e.g., 50 for kick, 300 for snare)." },
+                                decay_ms: { type: "NUMBER", description: "Total decay time in milliseconds (e.g., 400 for kick)." },
+                                filter_cutoff: { type: "NUMBER", description: "VCF cutoff frequency (0-100)." },
+                                suggested_heat: { type: "NUMBER", description: "Suggested analog saturation amount (1-10)." }
+                            }
+                        }
+                    }
+                })
+            };
+
+            try {
+                // Simple exponential backoff retry loop
+                for (let i = 0; i < 3; i++) {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                        
+                        if (text) {
+                            return isJson ? JSON.parse(text) : text;
+                        }
+                    } else if (response.status === 429 && i < 2) {
+                        const delay = Math.pow(2, i) * 1000;
+                        console.warn(`Rate limit exceeded. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw new Error(`Gemini API failed with status: ${response.status}`);
+                }
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                return isJson ? { error: `Gemini processing failed: ${error.message}` } : `Error: Gemini processing failed.`;
+            }
+        }
+        
+        async function generateSampleParameters() {
+            const promptInput = document.getElementById('ai-prompt');
+            const outputElement = document.getElementById('parameter-output');
+            const prompt = promptInput.value;
+            const trackName = TRACK_NAMES[selectedTrackIndex];
+
+            if (!prompt || selectedTrackIndex === null) {
+                outputElement.textContent = "Please select a track and enter a descriptive prompt (e.g., 'A vintage 808 snare').";
+                return;
+            }
+            outputElement.textContent = `Generating parameters for ${trackName} based on prompt: "${prompt}"...`;
+
+            const systemPrompt = `You are an expert AI music synthesis engine. Generate the core DSP parameters in JSON format for a drum sample. The input is a creative description. Focus on the characteristics that define the sound's ${trackName} quality.`;
+            const userQuery = `Generate parameters for a ${trackName} based on the description: "${prompt}"`;
+            
+            const result = await callGemini(systemPrompt, userQuery, true);
+
+            if (result.error) {
+                outputElement.textContent = result.error;
+            } else {
+                const jsonString = JSON.stringify(result, null, 2);
+                outputElement.textContent = `Generated for ${trackName}:\n${jsonString}`;
+                // Future step: Apply these parameters to the actual synth engine
+            }
+        }
+
+        async function refineGroove() {
+            const currentPattern = sequencerPattern[0].join('');
+            const outputElement = document.getElementById('groove-refine-output');
+            const styleSelect = document.getElementById('groove-style-select');
+            const selectedStyle = styleSelect.value;
+            
+            if (currentPattern.includes('1') === false) {
+                 outputElement.innerHTML = '<span class="text-red-400">Please enter a base pattern first (e.g., set the kick drum).</span>';
+                 return;
+            }
+
+            outputElement.innerHTML = `<span class="text-white">Analyzing and refining current pattern using ${selectedStyle} style...</span>`;
+
+            const systemPrompt = `You are a legendary hip-hop drum programmer, specializing in ${selectedStyle}'s signature off-grid swing and sound. Your task is to take a flat 16-step sequence (1s and 0s) and subtly adjust it to add 'humanized' groove and variation, specifically removing quantization stiffness. Return only the new 16-step sequence string.`;
+            const userQuery = `The current 16-step pattern for the main track is: ${currentPattern}. Refine this pattern to introduce the unique groove and micro-timing variation characteristic of ${selectedStyle}, but maintain the core rhythm structure.`;
+
+            const newPatternString = await callGemini(systemPrompt, userQuery, false);
+
+            if (newPatternString.startsWith("Error")) {
+                outputElement.innerHTML = `<span class="text-red-400">${newPatternString}</span>`;
+            } else {
+                const cleanPattern = newPatternString.match(/([01]{16})/)?.[0] || newPatternString.substring(0, 16).replace(/[^01]/g, '0');
+                if (cleanPattern.length === 16) {
+                    const newPattern = cleanPattern.split('').map(Number);
+                    // Mock: Apply the new pattern to the Kick track (Track 0)
+                    sequencerPattern[0] = newPattern; 
+                    renderSequencer();
+                    outputElement.innerHTML = `<span class="text-green-400">Groove refined! New ${selectedStyle} pattern applied to Kick track: ${cleanPattern}</span>`;
+                } else {
+                     outputElement.innerHTML = `<span class="text-red-400">Refinement failed: AI returned an unusable pattern.</span>`;
+                }
+            }
+        }
+
+        async function generateMarketingCopy() {
+            const outputElement = document.getElementById('marketing-copy-output');
+            const bpm = BPM;
+            const swing = SWING;
+            const filterEnabled = document.getElementById('tape-emulation-toggle').checked;
+            const presetName = document.getElementById('analog-preset').value;
+
+            outputElement.textContent = "Generating high-impact marketing copy...";
+
+            const systemPrompt = `You are a social media marketing expert for lo-fi music producers. Write a short, highly engaging caption (under 25 words) for a new drum loop. Use emojis, hashtags, and descriptive lo-fi, analog language.`;
+            const userQuery = `Write a marketing caption for a new drum loop created at ${bpm} BPM, with ${swing}% swing. The analog filter is ${filterEnabled ? 'ENABLED' : 'DISABLED'} and uses the "${presetName}" style.`;
+
+            const copy = await callGemini(systemPrompt, userQuery, false);
+
+            if (copy.startsWith("Error")) {
+                outputElement.innerHTML = `<span class="text-red-400">${copy}</span>`;
+            } else {
+                outputElement.innerHTML = `<span class="text-white">Copy Ready:</span><br>${copy}`;
+            }
+        }
+
+        // --- AFFILIATE & EXPORT LOGIC ---
+
+        function applyCoupon() {
+            const couponInput = document.getElementById('coupon-code');
+            const discountMessage = document.getElementById('discount-message');
+            const finalPriceDisplay = document.getElementById('final-wav-price');
+            const coupon = couponInput.value.toUpperCase().trim();
+            finalPrice = RETAIL_PRICE;
+
+            if (mockCoupons[coupon]) {
+                const commissionRate = mockCoupons[coupon].commission;
+                const discount = RETAIL_PRICE * (commissionRate / 100); // $5.00 * 0.50 = $2.50 discount
+                const newPrice = RETAIL_PRICE - discount; // $5.00 - $2.50 = $2.50
+                const djName = mockCoupons[coupon].name;
+
+                finalPrice = newPrice;
+                finalPriceDisplay.textContent = `$${newPrice.toFixed(2)}`;
+                finalPriceDisplay.classList.add('text-green-400');
+                
+                discountMessage.innerHTML = `<span class="text-green-400">Coupon applied! You save $${discount.toFixed(2)}. DJ ${djName} earns a $${discount.toFixed(2)} commission!</span>`;
+            } else if (coupon.length > 0) {
+                finalPriceDisplay.textContent = `$${RETAIL_PRICE.toFixed(2)}`;
+                finalPriceDisplay.classList.remove('text-green-400');
+                discountMessage.textContent = 'Invalid coupon code. Price is retail.';
+            } else {
+                finalPriceDisplay.textContent = `$${RETAIL_PRICE.toFixed(2)}`;
+                finalPriceDisplay.classList.remove('text-green-400');
+                discountMessage.textContent = '';
+            }
+            
+            // Update button text
+            document.getElementById('wav-export-button').textContent = `DOWNLOAD WAV ($${finalPrice.toFixed(2)})`;
+        }
+
+        function exportTrack(format) {
+            if (format === 'mp3') {
+                alert("MP3 Download Initiated (Mock). File will be low-quality and lossy.");
+            } else if (format === 'wav') {
+                if (finalPrice > 0) {
+                    alert(`WAV Download Initiated (Mock). Processing payment of $${finalPrice.toFixed(2)} for studio-quality audio.`);
+                } else {
+                    alert("WAV Download Initiated (Mock). Price was $0.00 due to a special promotion!");
+                }
+            }
+        }
+        
+    </script>
+    <script>
+        // Ensure Lucide icons are correctly rendered after all DOM manipulation is complete
+        window.onload = function() {
+            lucide.createIcons();
+        };
+    </script>
+</body>
+</html>
